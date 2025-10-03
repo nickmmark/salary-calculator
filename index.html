@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Employer Policy vs Market — Interactive Simulator</title>
+<style>
+  :root{
+    --orange:#f4a31e;
+    --blue:#1e90ff;
+  }
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;
+       margin:0; color:#222; background:#fafafa}
+  header{padding:18px 20px; background:#fff; border-bottom:1px solid #eee}
+  h1{font-size:20px; margin:0 0 6px}
+  .wrap{display:grid; grid-template-columns:320px 1fr; gap:18px; padding:18px}
+  @media (max-width:1000px){ .wrap{grid-template-columns:1fr} }
+  .panel{background:#fff; border:1px solid #eee; border-radius:10px; padding:14px}
+  .controls label{display:block; font-weight:700; margin-bottom:8px}
+  .control{display:grid; grid-template-columns:1fr 110px; align-items:center; gap:8px; margin:10px 0 14px}
+  input[type=range]{width:100%}
+  input[type=number]{width:80%; padding:6px 8px; border:1px solid #ddd; border-radius:6px}
+  .small{font-size:12px; color:#666}
+  .charts{display:grid; grid-template-columns:1fr; gap:14px}
+  .chart{background:#fff; border:1px solid #eee; border-radius:10px; padding:10px}
+  .title{font-weight:700; margin-bottom:8px}
+  .legend{display:flex; gap:12px; flex-wrap:wrap; align-items:center; font-size:12px; margin-bottom:6px}
+  .sw{width:18px; height:3px; display:inline-block; border-radius:2px; margin-right:4px}
+  .sw.fill{height:10px; background:rgba(244,163,30,.35); border:1px solid var(--orange)}
+  svg{width:100%; height:360px}
+  .summary{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px}
+  .kpi{background:#fff; border:1px solid #eee; border-radius:10px; padding:12px}
+  .kpi .v{font-size:18px; font-weight:800}
+  .kpi .l{font-size:10px; color:#666}
+  .tooltip{
+    position:fixed; pointer-events:none; z-index:10; background:#111; color:#fff;
+    padding:8px 10px; border-radius:8px; font-size:12px; line-height:1.3; opacity:.95;
+    transform:translate(-50%,-120%); white-space:nowrap
+  }
+  .foot{padding:10px 18px; font-size:12px; color:#666}
+</style>
+</head>
+<body>
+<header>
+  <h1>Effect of Employer Raise Policy on Employee Salver vs National Median Salary — Interactive Simulator</h1>
+  <div class="small">Policy: benchmark the national median salary; adjust only if gap &gt; threshold at review; reviews every R years; when a raise occurs, salary resets to the median.</div>
+</header>
+
+<div class="wrap">
+  <!-- Controls -->
+  <div class="panel controls">
+    <label>Parameters</label>
+
+    <div class="control">
+      <div>
+        Starting Salary
+        <div class="small">(USD)</div>
+        <input id="startRange" type="range" min="250000" max="800000" step="5000" value="450000">
+      </div>
+      <input id="startInput" type="number" min="250000" max="800000" step="5000" value="450000">
+    </div>
+
+    <div class="control">
+      <div>
+        Annual Median Growth
+        <div class="small">(% per year, compounded)</div>
+        <input id="growthRange" type="range" min="0" max="10" step="0.1" value="2.5">
+      </div>
+      <input id="growthInput" type="number" min="0" max="10" step="0.1" value="2.5">
+    </div>
+
+    <div class="control">
+      <div>
+        Review Period
+        <div class="small">(years)</div>
+        <input id="reviewRange" type="range" min="0.5" max="4" step="0.5" value="2">
+      </div>
+      <input id="reviewInput" type="number" min="0.5" max="4" step="0.5" value="2">
+    </div>
+
+    <div class="control">
+      <div>
+        Raise Trigger Threshold
+        <div class="small">(% required at review)</div>
+        <input id="threshRange" type="range" min="0" max="10" step="0.1" value="5">
+      </div>
+      <input id="threshInput" type="number" min="0" max="10" step="0.1" value="5">
+    </div>
+
+    <div class="small">Horizon: 20 years. Simulation step ≈ monthly.</div>
+
+    <div class="summary" style="margin-top:12px">
+      <div class="kpi">
+        <div class="v" id="kpiAvgLoss">$0</div>
+        <div class="l">Average loss per year (compared to national median)</div>
+      </div>
+      <div class="kpi">
+        <div class="v" id="kpiPctLost">0%</div>
+        <div class="l">Average percent below median salary</div>
+      </div>
+      <div class="kpi" id="kpiFVbox" style="display:none">
+        <div class="v" id="kpiFV">$0</div>
+        <div class="l">Total lost at year 20 (with interest)</div>
+      </div>
+    </div>
+
+    <!-- TVM controls ADDED (kept original structure; nothing removed) -->
+    <div class="control">
+      <div>
+        Interest / Discount Rate
+        <div class="small">(% per year for time value)</div>
+        <input id="tvmRate" type="number" min="0" max="15" step="0.1" value="3">
+      </div>
+      <div>
+        <label><input type="checkbox" id="applyTVM"> Apply Time Value of Money</label>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Charts -->
+  <div class="charts">
+    <div class="chart">
+      <div class="title">Salary vs National Median Salary</div>
+      <div class="legend">
+        <span class="sw" style="background:var(--orange)"></span> National Median Salary
+        <span class="sw" style="background:var(--blue)"></span> Employer Salary
+        <span class="sw fill"></span> Shortfall (hover for step details)
+      </div>
+      <svg id="chartMain" viewBox="0 0 900 360" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+
+    <div class="chart">
+      <div class="title">Cumulative Shortfall (Millions of $)</div>
+      <svg id="chartCumDollars" viewBox="0 0 900 360" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+
+    <div class="chart">
+      <div class="title">Cumulative Shortfall (%-years)</div>
+      <svg id="chartCumPercent" viewBox="0 0 900 360" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+  </div>
+</div>
+
+<div class="foot">Built by Nick Mark, MD (@nickmmark). Plots: D3.js. Colors: national median (orange), salary (blue), shaded shortfall per review window.</div>
+
+<div id="tooltip" class="tooltip" style="display:none"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+(function(){
+  // ---------- utilities ----------
+  const YEARS = 20;
+  const dt = 0.05;                       // ~ monthly step (years)
+  const T = d3.range(0, YEARS + 1e-9, dt);
+
+  const $ = id => document.getElementById(id);
+  const fmt$  = d3.format("$,");
+  const fmtPct = d3.format(".2%");
+  const fmt1 = d3.format(".1f");
+
+  // ---------- inputs two-way binding ----------
+  bind("startRange","startInput");
+  bind("growthRange","growthInput");
+  bind("reviewRange","reviewInput");
+  bind("threshRange","threshInput");
+
+  function bind(rId, nId){
+    const r = $(rId), n = $(nId);
+    const sync = (src, dst) => { dst.value = src.value; update(); };
+    r.addEventListener("input", () => sync(r, n));
+    n.addEventListener("input", () => sync(n, r));
+  }
+
+  // also bind TVM controls (ADDED)
+  $("tvmRate").addEventListener("input", update);
+  $("applyTVM").addEventListener("change", update);
+
+  // ---------- simulation ----------
+  function simulate(params){
+    const {start, g, review, threshold} = params;
+
+    const market = T.map(t => start * Math.pow(1+g, t));
+
+    const salary = new Array(T.length).fill(0);
+    salary[0] = start;
+
+    let curr = start;
+    let lastRaiseT = 0;
+
+    // indices lookup by time (rounded to 2 decimals to match dt=0.05 grid)
+    const idxAtTime = new Map(T.map((t,i)=>[t.toFixed(2), i]));
+    const cycles = []; // [{t0,t1,i0,i1,dollars,pctYears,endGap}]
+
+    // loop condition fixed (i < T.length)
+    for (let i=0; i < T.length; i++){
+      const t = T[i];
+
+      // do we have a review at this time?
+      if ((t - lastRaiseT) >= (review - 1e-9)) {
+        const gap = (market[i] - curr)/curr; // measured against current salary
+        if (gap > threshold) {
+          curr = market[i];                  // catch-up to market
+        }
+        // record the review window [lastRaiseT, t)
+        const i0 = idxAtTime.get(lastRaiseT.toFixed(2)) ?? 0;
+        const i1 = i;
+        if (i1 > i0) cycles.push({t0:lastRaiseT, t1:t, i0, i1});
+        lastRaiseT = t;
+      }
+      salary[i] = curr;                      // step function between reviews
+    }
+
+    // Shortfall time series
+    const shortDollars = market.map((m,i) => Math.max(0, m - salary[i]));
+    const shortPct     = market.map((m,i) => shortDollars[i] / m);
+
+    // Integrals (simple Riemann sum)
+    const cumDollars = d3.cumsum(shortDollars, v => v*dt);
+    const cumPercent = d3.cumsum(shortPct,     v => v*dt);
+
+    // Market earnings integral for denominator
+    const totalMarket = d3.sum(market.map(m => m*dt));
+
+    // Per-cycle info for tooltips
+    for (const c of cycles){
+      const dollars  = d3.sum(shortDollars.slice(c.i0, c.i1), v => v*dt);
+      const pctYears = d3.sum(shortPct.slice(c.i0, c.i1),     v => v*dt);
+      const endGap   = shortPct[c.i1-1] || 0;
+      c.dollars = dollars;
+      c.pctYears = pctYears;
+      c.endGap = endGap;
+    }
+
+    // Summary
+    const totalLost = cumDollars[cumDollars.length-1];
+    const avgPerYear = totalLost / YEARS;
+    // Average percent below median salary over time:
+    const avgPctBelow = (cumPercent[cumPercent.length-1] / YEARS); // fraction
+
+    return {
+      market, salary,
+      shortDollars, shortPct,
+      cumDollars, cumPercent,
+      cycles,
+      avgPerYear, avgPctBelow,
+      totalMarket
+    };
+  }
+
+  // ---------- drawing helpers ----------
+  function base(svg){
+    const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+    const width  = vb[2], height = vb[3];
+    const margin = {top:18,right:24,bottom:40,left:70};
+    const iw = width - margin.left - margin.right;
+    const ih = height - margin.top - margin.bottom;
+
+    const root = d3.select(svg).selectAll("g.root").data([null]).join("g")
+      .attr("class","root")
+      .attr("transform",`translate(${margin.left},${margin.top})`);
+
+    return {root, iw, ih, margin};
+  }
+
+  function drawMain(svg, sim, params){
+    const {root, iw, ih} = base(svg);
+    const x = d3.scaleLinear().domain([0, YEARS]).range([0, iw]);
+
+    const yMax = d3.max(sim.market);
+    const y0   = Math.min(params.start*0.9, sim.market[0]*0.9);
+    const y = d3.scaleLinear().domain([y0, yMax*1.02]).range([ih, 0]).nice();
+
+    // axes
+    root.selectAll(".axis.x").data([null]).join("g")
+      .attr("class","axis x")
+      .attr("transform",`translate(0,${ih})`)
+      .call(d3.axisBottom(x));
+    root.selectAll(".axis.y").data([null]).join("g")
+      .attr("class","axis y")
+      .call(d3.axisLeft(y).ticks(8).tickFormat(d3.format("$,~s")));
+
+    // lines
+    const line = d3.line().x((d,i)=>x(T[i])).y(d=>y(d));
+    root.selectAll("path.market").data([sim.market]).join("path")
+      .attr("class","market").attr("fill","none")
+      .attr("stroke","var(--orange)").attr("stroke-width",2).attr("d",line);
+    root.selectAll("path.salary").data([sim.salary]).join("path")
+      .attr("class","salary").attr("fill","none")
+      .attr("stroke","var(--blue)").attr("stroke-dasharray","6,4").attr("stroke-width",2).attr("d",line);
+
+    // shaded shortfall per review window (for tooltips)
+    const tip = d3.select("#tooltip");
+    const bands = root.selectAll("path.band").data(sim.cycles, d=>d.t0+"-"+d.t1);
+
+    bands.join(
+      enter => enter.append("path")
+        .attr("class","band")
+        .attr("fill","rgba(244,163,30,.35)")
+        .attr("stroke","var(--orange)")
+        .attr("d", d => bandPath(d, sim, x, y))
+        .on("mousemove", (event,d)=>{
+          const html =
+           `<div><b>Review window:</b> ${fmt1(d.t0)}–${fmt1(d.t1)} yr</div>
+            <div><b>End gap:</b> ${fmtPct(d.endGap)}</div>
+            <div><b>Dollars lost:</b> ${fmt$(Math.round(d.dollars))}</div>
+            <div><b>Avg/yr this step:</b> ${fmt$(Math.round(d.dollars/(d.t1-d.t0)))}</div>
+            <div><b>%-years this step:</b> ${(d.pctYears*100).toFixed(1)} %-yrs</div>`;
+          tip.style("display","block").html(html)
+             .style("left", (event.clientX)+"px")
+             .style("top", (event.clientY)+"px");
+        })
+        .on("mouseleave", ()=> tip.style("display","none")),
+      update => update.attr("d", d => bandPath(d, sim, x, y)),
+      exit => exit.remove()
+    );
+  }
+
+  // build a closed path for the shaded shortfall between t0..t1
+  function bandPath(cycle, sim, x, y){
+    const {i0, i1} = cycle;
+    const up = d3.range(i0, i1).map(i => [x(T[i]), y(sim.market[i])]);       // top (median)
+    const dn = d3.range(i1-1, i0-1, -1).map(i => [x(T[i]), y(sim.salary[i])]); // bottom (salary)
+    const pts = up.concat(dn);
+    return d3.line()(pts) + "Z";
+  }
+
+  function drawCumDollars(svg, sim){
+    const {root, iw, ih} = base(svg);
+    const x = d3.scaleLinear().domain([0, YEARS]).range([0, iw]);
+    const y = d3.scaleLinear()
+                .domain([0, d3.max(sim.cumDollars.map(d=>d/1e6))])
+                .range([ih,0]).nice();
+
+    root.selectAll(".axis.x").data([null]).join("g")
+      .attr("class","axis x")
+      .attr("transform",`translate(0,${ih})`).call(d3.axisBottom(x));
+    root.selectAll(".axis.y").data([null]).join("g").attr("class","axis y")
+      .call(d3.axisLeft(y));
+
+    const line = d3.line()
+      .x((d,i)=>x(T[i]))
+      .y(d=>y(d/1e6));
+    root.selectAll("path.cumDollars").data([sim.cumDollars]).join("path")
+      .attr("class","cumDollars")
+      .attr("fill","none").attr("stroke","red").attr("stroke-width",2).attr("d",line);
+
+    /* --------- ADDED: TVM-adjusted second line (future value at each time) ---------- */
+    const tvmOn = $("applyTVM").checked;
+    // compute cumulative FV to each t if enabled
+    let cumTVM = null;
+    if (tvmOn){
+      const r = Math.max(0, +$("tvmRate").value/100);
+      cumTVM = [];
+      let total = 0;
+      for (let i=0;i<T.length;i++){
+        total += sim.shortDollars[i]*dt * Math.pow(1+r, YEARS - T[i]); // grow each flow to year 20
+        cumTVM.push(total);
+      }
+    }
+
+    const tvmSel = root.selectAll("path.cumTVM").data(tvmOn ? [cumTVM] : []);
+    tvmSel.join(
+      enter => enter.append("path")
+        .attr("class","cumTVM")
+        .attr("fill","none").attr("stroke","green").attr("stroke-dasharray","6,4").attr("stroke-width",2)
+        .attr("d", d3.line().x((d,i)=>x(T[i])).y(d=>y(d/1e6))),
+      update => update.attr("d", d3.line().x((d,i)=>x(T[i])).y(d=>y(d/1e6))),
+      exit => exit.remove()
+    );
+
+    /* --------- ADDED: tooltip overlay for cumulative $ graph ---------- */
+    const tip = d3.select("#tooltip");
+    root.selectAll("rect.hover-cumDollars").data([null]).join("rect")
+      .attr("class","hover-cumDollars")
+      .attr("fill","transparent")
+      .attr("width", iw).attr("height", ih)
+      .on("mousemove", function(event){
+        const xm = x.invert(d3.pointer(event, this)[0]);
+        const i = Math.max(0, Math.min(T.length-1, Math.round(xm/dt)));
+        const baseCum = sim.cumDollars[i];
+        let html = `<div><b>Year ${T[i].toFixed(1)}</b></div>
+                    <div>Total lost: ${fmt$(Math.round(baseCum))}</div>`;
+        if (tvmOn){
+          const r = Math.max(0, +$("tvmRate").value/100);
+          let fv = 0;
+          for (let j=0;j<=i;j++){
+            fv += sim.shortDollars[j]*dt * Math.pow(1+r, YEARS - T[j]);
+          }
+          html += `<div>TVM-adjusted: ${fmt$(Math.round(fv))}</div>`;
+        }
+        tip.style("display","block").html(html)
+           .style("left", (event.clientX)+"px")
+           .style("top", (event.clientY)+"px");
+      })
+      .on("mouseleave", ()=> tip.style("display","none"));
+  }
+
+  function drawCumPercent(svg, sim){
+    const {root, iw, ih} = base(svg);
+    const x = d3.scaleLinear().domain([0, YEARS]).range([0, iw]);
+    const y = d3.scaleLinear()
+                .domain([0, d3.max(sim.cumPercent.map(d=>d*100))])
+                .range([ih,0]).nice();
+
+    root.selectAll(".axis.x").data([null]).join("g")
+      .attr("class","axis x")
+      .attr("transform",`translate(0,${ih})`).call(d3.axisBottom(x));
+    root.selectAll(".axis.y").data([null]).join("g").attr("class","axis y")
+      .call(d3.axisLeft(y));
+
+    const line = d3.line()
+      .x((d,i)=>x(T[i]))
+      .y(d=>y(d*100));
+    root.selectAll("path.cumPercent").data([sim.cumPercent]).join("path")
+      .attr("class","cumPercent")
+      .attr("fill","none").attr("stroke","blue").attr("stroke-width",2).attr("d",line);
+
+    /* --------- ADDED: tooltip overlay for cumulative %-years graph ---------- */
+    const tip = d3.select("#tooltip");
+    root.selectAll("rect.hover-cumPct").data([null]).join("rect")
+      .attr("class","hover-cumPct")
+      .attr("fill","transparent")
+      .attr("width", iw).attr("height", ih)
+      .on("mousemove", function(event){
+        const xm = x.invert(d3.pointer(event, this)[0]);
+        const i = Math.max(0, Math.min(T.length-1, Math.round(xm/dt)));
+        const cumPctYears = sim.cumPercent[i]*100;
+        const avgPctToDate = (sim.cumPercent[i]/(T[i] || 1e-9))*100; // time-avg up to t
+        const html = `<div><b>Year ${T[i].toFixed(1)}</b></div>
+                      <div>Cumulative: ${cumPctYears.toFixed(2)} %-years</div>
+                      <div>Avg below median: ${avgPctToDate.toFixed(2)}%</div>`;
+        tip.style("display","block").html(html)
+           .style("left", (event.clientX)+"px")
+           .style("top", (event.clientY)+"px");
+      })
+      .on("mouseleave", ()=> tip.style("display","none"));
+  }
+
+  // ---------- update ----------
+  function update(){
+    const params = {
+      start: +$("startInput").value,
+      g: +$("growthInput").value/100,
+      review: +$("reviewInput").value,
+      threshold: +$("threshInput").value/100
+    };
+    if (params.review < dt) params.review = dt; // guard
+
+    const sim = simulate(params);
+
+    drawMain(document.getElementById("chartMain"), sim, params);
+    drawCumDollars(document.getElementById("chartCumDollars"), sim);
+    drawCumPercent(document.getElementById("chartCumPercent"), sim);
+
+    // KPIs (robust)
+    const totalLost = sim.cumDollars[sim.cumDollars.length-1];
+    const avg = totalLost / YEARS;
+    const avgPctBelow = sim.cumPercent[sim.cumPercent.length-1] / YEARS; // fraction
+
+    $("kpiAvgLoss").textContent = fmt$(Math.round(avg));
+    $("kpiPctLost").textContent = fmtPct(avgPctBelow);
+
+    // Time Value of Money (Future Value at year 20)
+    const tvmChecked = $("applyTVM").checked;
+    const fvBox = $("kpiFVbox");
+    if (tvmChecked){
+      fvBox.style.display = "block";
+      const r = Math.max(0, +$("tvmRate").value/100);
+      let fv = 0;
+      for (let i=0; i<T.length; i++){
+        // cash flow at time T[i] for duration dt, grown to year 20:
+        fv += sim.shortDollars[i]*dt * Math.pow(1+r, YEARS - T[i]);
+      }
+      $("kpiFV").textContent = fmt$(Math.round(fv));
+    } else {
+      fvBox.style.display = "none";
+    }
+  }
+
+  // initial render
+  update();
+})();
+</script>
+</body>
+</html>
