@@ -23,6 +23,7 @@
   .small{font-size:12px; color:#666}
   .charts{display:grid; grid-template-columns:1fr; gap:14px}
   .chart{background:#fff; border:1px solid #eee; border-radius:10px; padding:10px}
+  .chart.large svg{height:500px;} /* enlarge second chart when TVM is on */
   .title{font-weight:700; margin-bottom:8px}
   .legend{display:flex; gap:12px; flex-wrap:wrap; align-items:center; font-size:12px; margin-bottom:6px}
   .sw{width:18px; height:3px; display:inline-block; border-radius:2px; margin-right:4px}
@@ -130,15 +131,12 @@
       <svg id="chartMain" viewBox="0 0 900 360" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
 
-    <div class="chart">
+    <div class="chart" id="cumChartBox">
       <div class="title">Cumulative Shortfall (Millions of $)</div>
       <svg id="chartCumDollars" viewBox="0 0 900 360" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
 
-    <div class="chart">
-      <div class="title">Cumulative Shortfall (%-years)</div>
-      <svg id="chartCumPercent" viewBox="0 0 900 360" preserveAspectRatio="xMidYMid meet"></svg>
-    </div>
+    <!-- Third graph removed: Cumulative Shortfall (%-years) -->
   </div>
 </div>
 
@@ -451,7 +449,7 @@
 
     drawMain(document.getElementById("chartMain"), sim, params);
     drawCumDollars(document.getElementById("chartCumDollars"), sim);
-    drawCumPercent(document.getElementById("chartCumPercent"), sim);
+    // Removed: drawCumPercent(document.getElementById("chartCumPercent"), sim);
 
     // KPIs (robust)
     const totalLost = sim.cumDollars[sim.cumDollars.length-1];
@@ -464,8 +462,12 @@
     // Time Value of Money (Future Value at year 20)
     const tvmChecked = $("applyTVM").checked;
     const fvBox = $("kpiFVbox");
+
+    // NEW: toggle size of second chart container when TVM is on/off
+    const cumContainer = document.getElementById("chartCumDollars").closest(".chart");
     if (tvmChecked){
       fvBox.style.display = "block";
+      if (cumContainer) cumContainer.classList.add("large");
       const r = Math.max(0, +$("tvmRate").value/100);
       let fv = 0;
       for (let i=0; i<T.length; i++){
@@ -475,6 +477,7 @@
       $("kpiFV").textContent = fmt$(Math.round(fv));
     } else {
       fvBox.style.display = "none";
+      if (cumContainer) cumContainer.classList.remove("large");
     }
   }
 
